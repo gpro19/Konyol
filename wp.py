@@ -113,7 +113,7 @@ def log_usage_to_channel(bot, user_id, pdf_filename, story_url, pdf):
 
 def clean_text(text):
     text = re.sub(r'<p.*?>', '\n', text)
-    text = re.sub(r'\xa0', '', text)
+    text = re.sub(r'\xa0', ' ', text)
     return text
 
 def clean_filename(title):
@@ -151,6 +151,8 @@ def download_image(image_url):
     except Exception as e:
         print(f"Error downloading image: {e}")
         return None
+        
+        
 
 def extract_wattpad_story(story_url):
     global chapterCount
@@ -200,6 +202,17 @@ def extract_wattpad_story(story_url):
             chapter_content = []
             chapter_title = chapter_soup.select_one('h1.h2').get_text(strip=True)
 
+            # Kode baru untuk mengganti tag <b> dan <i>
+            for b_tag in chapter_soup.find_all(['b']):
+                b_tag.insert_before("**")
+                b_tag.insert_after("**")
+                b_tag.unwrap()  # Menghapus tag <b> setelah menambahkan tanda
+
+            for i_tag in chapter_soup.find_all(['i']):
+                i_tag.insert_before("*")
+                i_tag.insert_after("*")
+                i_tag.unwrap()  # Menghapus tag <i> setelah menambahkan tanda
+
             for i in range(1, pages + 1):
                 page_url = f"{chapter_url}/page/{i}"
                 page_content = get_page(page_url)
@@ -213,11 +226,12 @@ def extract_wattpad_story(story_url):
             continue
 
     return chapters, story_content, image_url, author_name, story_title
+    
 
 def format_content(content):
-    content = re.sub(r'[^\x20-\x7E\n]', '', content)  # Menambahkan \n ke dalam rentang yang diperbolehkan
+    content = re.sub(r'[^\x20-\x7E\n*]', '', content) 
     sentences = re.split(r'(?<=[.!?]) +', content)
-    return ''.join(sentences)
+    return ' '.join(sentences)
 
 def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf_filename):
     pdf = FPDF()
@@ -264,13 +278,28 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
 
             cleaned_content = re.sub(r'<[^>]+>', '', content)
             formatted_content = format_content(cleaned_content)
+            
             pdf.set_font("Arial", size=20)
             paragraphs = formatted_content.split('\n')
 
             for paragraph in paragraphs:
                 if paragraph.strip():
-                    pdf.multi_cell(0, 10, paragraph, align='L')
+                    # Di sini Anda bisa memeriksa pola pemformatan tertentu
+                    if '**' in paragraph:  # Contoh untuk tebal
+                        paragraph = paragraph.replace('**', '')  # Menghapus penanda pemformatan
+                        pdf.set_font("Arial", 'B', 20)  # Mengatur font menjadi tebal
+                        pdf.multi_cell(0, 10, paragraph, align='L')
+                        pdf.set_font("Arial", size=20)  # Mengatur ulang ke font normal
+                    elif '*' in paragraph:  # Contoh untuk miring
+                        paragraph = paragraph.replace('*', '')  # Menghapus penanda pemformatan
+                        pdf.set_font("Arial", 'I', 20)  # Mengatur font menjadi miring
+                        pdf.multi_cell(0, 10, paragraph, align='L')
+                        pdf.set_font("Arial", size=20)  # Mengatur ulang ke font normal
+                    else:
+                        pdf.multi_cell(0, 10, paragraph, align='L')
                     pdf.ln(5)
+                    
+             
 
             pdf.set_y(-25)
             pdf.set_font("Arial", size=15)
