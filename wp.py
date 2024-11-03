@@ -8,56 +8,54 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 from datetime import datetime, date
 from flask import Flask, request
 import threading
-import json
+from pymongo import MongoClient
 
 app = Flask(__name__)
 
-chapterCount = 0
+# Set up MongoDB connection
+client = MongoClient('mongodb+srv://tlol:galeh@cluster0.9ed81h0.mongodb.net/?retryWrites=true&w=majority')
+db = client['wattpad_bot']
+users_collection = db['users']
 
+# Blacklist set
+blacklist = set()
 
-# Memuat data pengguna dari file JSON
-def load_user_data():
-    if not os.path.exists('user_data.json'):
-        return {"users": {}}
-    with open('user_data.json', 'r') as f:
-        return json.load(f)
+# Fungsi untuk memuat data pengguna dari MongoDB
+def load_user_data(user_id):
+    user_data = users_collection.find_one({"user_id": user_id})
+    return user_data if user_data else {"user_id": user_id, "usage_count": 0, "last_reset": str(date.today()), "premium": False, "donor": False}
 
-# Menyimpan data pengguna ke file JSON
-def save_user_data(data):
-    with open('user_data.json', 'w') as f:
-        json.dump(data, f)
-        
+# Fungsi untuk menyimpan data pengguna ke MongoDB
+def save_user_data(user_data):
+    users_collection.update_one({"user_id": user_data["user_id"]}, {"$set": user_data}, upsert=True)
 
 def add_premium_member(user_id):
-    user_data = load_user_data()
-    if str(user_id) not in user_data["users"]:
-        user_data["users"][str(user_id)] = {
-            "usage_count": 0,
-            "last_reset": str(date.today()),
-            "premium": True
-        }
-    else:
-        user_data["users"][str(user_id)]["premium"] = True
+    user_data = load_user_data(user_id)
+    user_data["premium"] = True
     save_user_data(user_data)
 
-# Fungsi untuk menghapus anggota premium
 def remove_premium_member(user_id):
-    user_data = load_user_data()
-    if str(user_id) in user_data["users"]:
-        user_data["users"][str(user_id)]["premium"] = False
+    user_data = load_user_data(user_id)
+    user_data["premium"] = False
     save_user_data(user_data)
 
-# Fungsi untuk menangani perintah admin
+def add_donor_member(user_id):
+    user_data = load_user_data(user_id)
+    user_data["donor"] = True
+    save_user_data(user_data)
+
+def remove_donor_member(user_id):
+    user_data = load_user_data(user_id)
+    user_data["donor"] = False
+    save_user_data(user_data)
+
 def handle_admin_commands(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
-    print(f"User ID: {user_id}")  # Debugging
-    if user_id not in [1910497806, 5833893519, 5166575484, 6172467461]:  # Memeriksa apakah pengguna adalah developer
+    if user_id not in [1910497806, 5833893519, 5166575484, 6172467461]:  # Check if user is developer
         update.message.reply_text('Anda tidak memiliki izin untuk mengakses perintah ini.')
         return
 
     command = context.args[0] if context.args else None
-    print(f"Command: {command}, Args: {context.args}")  # Debugging
-
     target_user_id = None
 
     if len(context.args) > 1:
@@ -73,47 +71,50 @@ def handle_admin_commands(update: Update, context: CallbackContext):
     elif command == "delpremium" and target_user_id:
         remove_premium_member(target_user_id)
         update.message.reply_text(f'User ID {target_user_id} telah dihapus dari premium.')
+    elif command == "adddonor" and target_user_id:
+        add_donor_member(target_user_id)
+        update.message.reply_text(f'User ID {target_user_id} telah ditambahkan sebagai donasi.')
+    elif command == "deldonor" and target_user_id:
+        remove_donor_member(target_user_id)
+        update.message.reply_text(f'User ID {target_user_id} telah dihapus dari donasi.')
+    elif command == "addblacklist" and target_user_id:
+        blacklist.add(target_user_id)
+        update.message.reply_text(f'User ID {target_user_id} telah ditambahkan ke blacklist.')
+    elif command == "delblacklist" and target_user_id:
+        blacklist.discard(target_user_id)
+        update.message.reply_text(f'User ID {target_user_id} telah dihapus dari blacklist.')
     else:
         update.message.reply_text('Perintah tidak dikenali atau parameter tidak valid.')
-        
+
+
+
+
+def is_premium_user(user_id):
+    user_data = load_user_data(user_id)
+    return user_data.get("premium", False)
+
+def is_donor_user(user_id):
+    user_data = load_user_data(user_id)
+    return user_data.get("donor", False)
+
+def is_blacklisted(user_id):
+    return user_id in blacklist
+
+def reset_usage():
+    for user in users_collection.find():
+        if user["last_reset"] != str(date.today()):
+            user["usage_count"] = 0
+            user["last_reset"] = str(date.today())
+            save_user_data(user)
+
 def is_valid_url(url):
     return re.match(r'^(http://|https://)', url) is not None
 
-# Memeriksa apakah pengguna adalah anggota premium
-def is_premium_user(user_id):
-    premium_users = [1910497806, 5833893519, 5166575484, 6172467461]  # ID developer
-    user_data = load_user_data()
-    return user_id in premium_users or user_data["users"].get(str(user_id), {}).get("premium", False)
 
-# Menginisialisasi jumlah penggunaan pengguna
-def initialize_user(user_id):
-    user_data = load_user_data()
-    if str(user_id) not in user_data["users"]:
-        user_data["users"][str(user_id)] = {
-            "usage_count": 0,
-            "last_reset": str(date.today()),
-            "premium": False
-        }
-        save_user_data(user_data)
-
-# Mereset jumlah penggunaan setiap hari
-def reset_usage():
-    user_data = load_user_data()
-    for user_id, data in user_data["users"].items():
-        if data["last_reset"] != str(date.today()):
-            data["usage_count"] = 0
-            data["last_reset"] = str(date.today())
-    save_user_data(user_data)
-
-# Mencatat penggunaan ke saluran
-def log_usage_to_channel(bot, user_id, pdf_filename, story_url, pdf):
-    message = f"User ID: {user_id} telah menggunakan bot.\n"
-    message += f"Tautan Cerita: {story_url}\n"    
-    bot.send_document(chat_id=-1002285439982, document=pdf, caption=message)
 
 def clean_text(text):
     text = re.sub(r'<p.*?>', '\n', text)
-    text = re.sub(r'\xa0', ' ', text)
+    text = re.sub(r'\xa0', '', text)
     return text
 
 def clean_filename(title):
@@ -151,8 +152,6 @@ def download_image(image_url):
     except Exception as e:
         print(f"Error downloading image: {e}")
         return None
-        
-        
 
 def extract_wattpad_story(story_url):
     global chapterCount
@@ -202,17 +201,6 @@ def extract_wattpad_story(story_url):
             chapter_content = []
             chapter_title = chapter_soup.select_one('h1.h2').get_text(strip=True)
 
-            # Kode baru untuk mengganti tag <b> dan <i>
-            for b_tag in chapter_soup.find_all(['b']):
-                b_tag.insert_before("**")
-                b_tag.insert_after("**")
-                b_tag.unwrap()  # Menghapus tag <b> setelah menambahkan tanda
-
-            for i_tag in chapter_soup.find_all(['i']):
-                i_tag.insert_before("*")
-                i_tag.insert_after("*")
-                i_tag.unwrap()  # Menghapus tag <i> setelah menambahkan tanda
-
             for i in range(1, pages + 1):
                 page_url = f"{chapter_url}/page/{i}"
                 page_content = get_page(page_url)
@@ -226,12 +214,11 @@ def extract_wattpad_story(story_url):
             continue
 
     return chapters, story_content, image_url, author_name, story_title
-    
 
 def format_content(content):
-    content = re.sub(r'[^\x20-\x7E\n*]', '', content) 
+    content = re.sub(r'[^\x20-\x7E\n]', '', content)  # Menambahkan \n ke dalam rentang yang diperbolehkan
     sentences = re.split(r'(?<=[.!?]) +', content)
-    return ' '.join(sentences)
+    return ''.join(sentences)
 
 def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf_filename):
     pdf = FPDF()
@@ -278,28 +265,13 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
 
             cleaned_content = re.sub(r'<[^>]+>', '', content)
             formatted_content = format_content(cleaned_content)
-            
             pdf.set_font("Arial", size=20)
             paragraphs = formatted_content.split('\n')
 
             for paragraph in paragraphs:
                 if paragraph.strip():
-                    # Di sini Anda bisa memeriksa pola pemformatan tertentu
-                    if '**' in paragraph:  # Contoh untuk tebal
-                        paragraph = paragraph.replace('**', '')  # Menghapus penanda pemformatan
-                        pdf.set_font("Arial", 'B', 20)  # Mengatur font menjadi tebal
-                        pdf.multi_cell(0, 10, paragraph, align='L')
-                        pdf.set_font("Arial", size=20)  # Mengatur ulang ke font normal
-                    elif '*' in paragraph:  # Contoh untuk miring
-                        paragraph = paragraph.replace('*', '')  # Menghapus penanda pemformatan
-                        pdf.set_font("Arial", 'I', 20)  # Mengatur font menjadi miring
-                        pdf.multi_cell(0, 10, paragraph, align='L')
-                        pdf.set_font("Arial", size=20)  # Mengatur ulang ke font normal
-                    else:
-                        pdf.multi_cell(0, 10, paragraph, align='L')
+                    pdf.multi_cell(0, 10, paragraph, align='L')
                     pdf.ln(5)
-                    
-             
 
             pdf.set_y(-25)
             pdf.set_font("Arial", size=15)
@@ -313,15 +285,23 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
         print(f"Error buat PDF: {e}")
 
 
+
+def log_usage_to_channel(bot, user_id, pdf_filename, story_url, pdf):
+    message = f"User ID: {user_id} telah menggunakan bot.\n"
+    message += f"Tautan Cerita: {story_url}\n"    
+    bot.send_document(chat_id=-1002285439982, document=pdf, caption=message)
+
+
 def handle_message(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
-    initialize_user(user_id)
+    if is_blacklisted(user_id):
+        update.message.reply_text('Anda telah diblacklist dan tidak dapat menggunakan bot ini.')
+        return
+
+    user_data = load_user_data(user_id)
     reset_usage()
 
-    user_data = load_user_data()
-    user_info = user_data["users"][str(user_id)]
-
-    if not is_premium_user(user_id) and user_info["usage_count"] >= 2:
+    if not is_premium_user(user_id) and not is_donor_user(user_id) and user_data["usage_count"] >= 1:
         update.message.reply_text('Anda telah mencapai batas penggunaan harian. Silakan coba lagi besok.')
         return
 
@@ -340,33 +320,28 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text('Gagal mengambil cerita. Pastikan URL Wattpad valid.')
             return
 
-        user_info["usage_count"] += 1
+        user_data["usage_count"] += 1
         save_user_data(user_data)
 
-        
-        # Memanggil fungsi create_pdf untuk menghasilkan file PDF
-        pdf_filename = f"{clean_filename(story_title)} by {clean_filename(author_name)} (WattpadToPdfbot).pdf"
+        pdf_filename = f"{clean_filename(story_title)} by {clean_filename(author_name)}.pdf"
         create_pdf(chapters, story_content, image_url, author_name, story_title, pdf_filename)
 
         if os.path.exists(pdf_filename):           
             with open(pdf_filename, 'rb') as pdf:
-              caption = f"File: {pdf_filename}\nDiupload oleh: @WattpadToPdfbot"
-              rs = update.message.reply_document(pdf, caption=caption)
-              log_usage_to_channel(context.bot, user_id, pdf_filename, url, rs.document.file_id)
+                caption = f"File: {pdf_filename}\nDiupload oleh: @WattpadToPdfbot"
+                rs = update.message.reply_document(pdf, caption=caption)                
+                log_usage_to_channel(context.bot, user_id, pdf_filename, url, rs.document.file_id)
         else:
             update.message.reply_text('File PDF tidak dapat dibuat.')
 
         context.bot.delete_message(chat_id=update.message.chat_id, message_id=message.message_id)
 
-
-
-
-
-# Fungsi untuk menangani perintah /start
 def start(update: Update, context: CallbackContext):
     welcome_message = (
         "Selamat datang di Wattpad To PDF Bot! Kirimkan URL cerita Wattpad yang ingin Anda konversi ke PDF.\n"
-        "Anda hanya dapat menggunakan bot ini untuk mengonversi cerita dua kali sehari."
+        "Pengguna biasa dapat menggunakan bot ini untuk mengonversi cerita satu kali sehari,\n"
+        "pengguna donasi dapat mengonversi lima kali sehari,\n"
+        "dan pengguna premium tidak memiliki batasan."
     )
     update.message.reply_text(welcome_message)
 
@@ -375,22 +350,26 @@ def help(update: Update, context: CallbackContext):
         "Ini adalah Wattpad To PDF Bot!\n"
         "Anda dapat mengonversi cerita Wattpad ke PDF dengan mengikuti langkah-langkah berikut:\n\n"
         "1. Kirimkan URL cerita Wattpad yang ingin Anda konversi.\n"
-        "2. Anda hanya dapat menggunakan bot ini untuk mengonversi cerita satu kali sehari.\n"
-        "3. Setelah mengirimkan URL, bot akan memproses dan mengonversi cerita menjadi file PDF.\n"
-        "4. Anda akan menerima file PDF yang dapat diunduh.\n\n"
+        "2. Pengguna biasa dapat menggunakan bot ini untuk mengonversi cerita satu kali sehari.\n"
+        "3. Pengguna donasi dapat mengonversi hingga lima kali sehari.\n"
+        "4. Pengguna premium tidak memiliki batasan.\n"
+        "5. Setelah mengirimkan URL, bot akan memproses dan mengonversi cerita menjadi file PDF.\n"
+        "6. Anda akan menerima file PDF yang dapat diunduh.\n\n"
         "Perintah yang tersedia:\n"
         "/start - Memulai interaksi dengan bot.\n"
         "/help - Menampilkan pesan bantuan ini.\n"
         "/addpremium <user_id> - Menambahkan pengguna sebagai anggota premium (hanya untuk developer).\n"
-        "/delpremium <user_id> - Menghapus status premium pengguna (hanya untuk developer)."
+        "/delpremium <user_id> - Menghapus status premium pengguna (hanya untuk developer).\n"
+        "/adddonor <user_id> - Menambahkan pengguna sebagai anggota donasi (hanya untuk developer).\n"
+        "/deldonor <user_id> - Menghapus status donasi pengguna (hanya untuk developer).\n"
+        "/addblacklist <user_id> - Menambahkan pengguna ke blacklist (hanya untuk developer).\n"
+        "/delblacklist <user_id> - Menghapus pengguna dari blacklist (hanya untuk developer)."
     )
     update.message.reply_text(help_message)
-
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = request.get_json()
-    print(update)  # Log the received update for debugging
     if "message" in update and "text" in update["message"]:
         handle_message(update)
     return '', 200
@@ -399,18 +378,14 @@ def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8000)))
 
 def main():
-    # Inisialisasi bot Telegram
     updater = Updater("7698381625:AAFtPleOWtTjYXSX5sP4HJw-LGRZIWJ-q6A")
     dp = updater.dispatcher
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("admin", handle_admin_commands))  # Menambahkan handler untuk perintah admin
-    dp.add_handler(CommandHandler("help", help))  # Menambahkan handler untuk perintah help
+    dp.add_handler(CommandHandler("admin", handle_admin_commands))
+    dp.add_handler(CommandHandler("help", help))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
     
-    # Jalankan bot di thread terpisah
     updater.start_polling()
-
-    # Jalankan Flask app di thread terpisah
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
 
