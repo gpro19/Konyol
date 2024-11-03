@@ -330,13 +330,14 @@ def handle_message(update: Update, context: CallbackContext):
 
 def start(update: Update, context: CallbackContext):
     welcome_message = (
-        "Selamat datang di Wattpad To PDF Bot! Kirimkan URL cerita Wattpad yang ingin Anda konversi ke PDF.\n"
-        "Pengguna biasa dapat menggunakan bot ini untuk mengonversi cerita satu kali sehari,\n"
-        "pengguna donasi dapat mengonversi lima kali sehari,\n"
-        "dan pengguna premium tidak memiliki batasan."
+        "Selamat datang di Wattpad To PDF Bot!\nKirimkan URL cerita Wattpad yang ingin Anda konversi ke PDF.\n"
+        "<b>Pengguna biasa</b> dapat menggunakan bot ini untuk mengonversi cerita <b>satu kali sehari</b>,\n"
+        "<b>pengguna donasi</b> dapat mengonversi <b>lima kali sehari</b>,\n"
+        "dan <b>pengguna premium</b> tidak memiliki batasan."
     )
-    update.message.reply_text(welcome_message)
-
+    update.message.reply_text(welcome_message, parse_mode='HTML')
+    
+    
 def help(update: Update, context: CallbackContext):
     help_message = (
         "Ini adalah Wattpad To PDF Bot!\n"
