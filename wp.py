@@ -12,6 +12,10 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
+
+chapterCount = 0
+
+
 # Set up MongoDB connection
 client = MongoClient('mongodb+srv://tlol:galeh@cluster0.9ed81h0.mongodb.net/?retryWrites=true&w=majority')
 db = client['wattpad_bot']
@@ -86,9 +90,6 @@ def handle_admin_commands(update: Update, context: CallbackContext):
     else:
         update.message.reply_text('Perintah tidak dikenali atau parameter tidak valid.')
 
-
-
-
 def is_premium_user(user_id):
     user_data = load_user_data(user_id)
     return user_data.get("premium", False)
@@ -110,15 +111,12 @@ def reset_usage():
 def is_valid_url(url):
     return re.match(r'^(http://|https://)', url) is not None
 
-
-
 def clean_text(text):
     text = re.sub(r'<p.*?>', '\n', text)
     text = re.sub(r'\xa0', '', text)
     return text
 
 def clean_filename(title):
-    # Menghapus emoji dan karakter non-standar
     title = re.sub(r'[^\x20-\x7E]', '', title)  # Hapus karakter di luar rentang ASCII
     filename = title
     for i in ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '^']:
@@ -154,7 +152,6 @@ def download_image(image_url):
         return None
 
 def extract_wattpad_story(story_url):
-    global chapterCount
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
@@ -190,7 +187,6 @@ def extract_wattpad_story(story_url):
 
     story_content = []
     for title, link in chapters:
-        chapterCount += 1
         chapter_url = f"https://www.wattpad.com{link}"
         try:
             chapter_response = requests.get(chapter_url, headers=headers)
@@ -233,7 +229,6 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
             pdf.ln(5)
 
         pdf.add_page()
-        #pdf.set_y(105) 
         pdf.set_y(50)
         pdf.set_font("Arial", 'B', 20)
         pdf.cell(0, 10, clean_filename(story_title), ln=True, align='C')
@@ -284,13 +279,10 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
     except Exception as e:
         print(f"Error buat PDF: {e}")
 
-
-
 def log_usage_to_channel(bot, user_id, pdf_filename, story_url, pdf):
     message = f"User ID: {user_id} telah menggunakan bot.\n"
     message += f"Tautan Cerita: {story_url}\n"    
     bot.send_document(chat_id=-1002285439982, document=pdf, caption=message)
-
 
 def handle_message(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
