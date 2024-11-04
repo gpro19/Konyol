@@ -247,7 +247,7 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
             pdf.cell(0, 10, chapter[0].encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
         pdf.ln(10)
         pdf.set_font("Arial", size=13)
-        pdf.cell(0, 10, "Dibuat oleh: @WattpadToPdfbot", ln=True, align='C')
+        pdf.cell(0, 10, "Generate By : Wattpad To PDF", ln=True, align='C')
 
         for page_num, (title, content) in enumerate(story_content, start=1):
             pdf.add_page()
@@ -272,7 +272,7 @@ def create_pdf(chapters, story_content, image_url, author_name, story_title, pdf
             pdf.set_font("Arial", size=15)
             pdf.cell(0, 10, story_title.encode('latin-1', 'replace').decode('latin-1'), ln=False, align='L')
             pdf.set_x(pdf.w - 15)
-            pdf.cell(0, 10, f"Wattpad To Pdf | {page_num}", ln=True, align='R')
+            pdf.cell(0, 10, f"Wattpad To PDF | {page_num}", ln=True, align='R')
 
         pdf.output(pdf_filename)
 
@@ -371,7 +371,7 @@ def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8000)))
 
 def main():
-    updater = Updater("7698381625:AAFtPleOWtTjYXSX5sP4HJw-LGRZIWJ-q6A")
+    updater = Updater("8079725112:AAF6lX0qvwz-dTkAkXmpHV1ZDdzcrxDBJWk")
     dp = updater.dispatcher
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("admin", handle_admin_commands))
