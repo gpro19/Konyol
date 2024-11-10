@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Set variabel lingkungan untuk port
-ENV PORT 8000
+ENV PORT 5000
 
 # Jalankan aplikasi
 CMD ["python", "wp.py"]
